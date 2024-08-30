@@ -5,37 +5,57 @@ import "../lib/forge-std/src/Script.sol";
 import "../src/CiviCoin.sol";
 import "../src/TownHallDAO.sol";
 
-contract VerifyDeployment is Script {
+contract Verify is Script {
     function run() external {
-        // Get the deployer's private key from the environment
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        // Fetch private keys from environment variables
+        uint256 deployerPrivateKey = vm.envUint("DEPLOYER_PRIVATE_KEY");
+        uint256 testUserPrivateKey = vm.envUint("TEST_USER_PRIVATE_KEY");
 
-        // Start broadcasting transactions with the deployer's private key
+        // Set up initial variables
+        uint256 initialMint = 1000 * 10**18;
+        uint256 proposalAmount = 1 ether; // 1 ETH for the proposal
+        string memory proposalDescription = "Build a new park";
+        address payable recipient = payable(vm.addr(testUserPrivateKey));
+
+        // Start broadcasting transactions as deployer
         vm.startBroadcast(deployerPrivateKey);
 
-        // Step 1: Deploy the CiviCoin contract
+        // Deploy CiviCoin contract
         CiviCoin civiCoin = new CiviCoin();
 
-        // Step 2: Deploy the TownHallDAO contract with the address of CiviCoin
-        TownHallDAO townHallDAO = new TownHallDAO(address(civiCoin));
+        // Deploy TownHallDAO contract
+        TownHallDAO dao = new TownHallDAO(address(civiCoin));
 
-        // Step 3: Test the addUser function
-        // We use the deployer address as the test user
-        address testUser = vm.addr(deployerPrivateKey);
-        uint256 mintAmount = 1000 * 10 ** civiCoin.decimals();
+        // Transfer ownership of CiviCoin to the TownHallDAO
+        civiCoin.transferOwnership(address(dao));
 
-        // Call addUser to mint tokens to the test user
-        townHallDAO.addUser(testUser, mintAmount);
+        // Mint initial tokens to the test user via TownHallDAO
+        dao.addUser(vm.addr(testUserPrivateKey), initialMint);
 
-        // Log the user's balance to verify minting was successful
-        uint256 userBalance = civiCoin.balanceOf(testUser);
-        console.log("User Balance:", userBalance);
+        // Fund the DAO with ETH to cover the proposal's execution
+        payable(address(dao)).transfer(2 ether); // Transfer 2 ETH to the DAO
 
-        // Check that the user was added
-        bool userAdded = townHallDAO.isUser(testUser);
-        console.log("User Added:", userAdded);
-
-        // Stop broadcasting transactions
         vm.stopBroadcast();
+
+        // Start broadcasting as the test user
+        vm.startBroadcast(testUserPrivateKey);
+
+        // Test creating a proposal as the test user
+        dao.createProposal(proposalDescription, proposalAmount, recipient);
+
+        // Test voting on the proposal
+        uint256 proposalId = 1;
+        uint256 voteAmount = 10 * 10**18; // 10 CiviCoins
+        dao.voteOnProposal(proposalId, voteAmount, true); // Vote in favor
+
+        vm.stopBroadcast();
+
+        // // Advance time after all transactions are committed
+        // vm.warp(block.timestamp + 1 weeks + 1);
+
+        // // Execute the proposal
+        // vm.startBroadcast(testUserPrivateKey);
+        // dao.executeProposal(proposalId);
+        // vm.stopBroadcast();
     }
 }
